@@ -25,7 +25,6 @@ import (
 	"net"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -36,6 +35,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	perrors "github.com/pkg/errors"
+	uatomic "go.uber.org/atomic"
 )
 
 const (
@@ -59,17 +59,12 @@ const (
 /////////////////////////////////////////
 
 var (
-	wheel *gxtime.Wheel
+	defaultTimerWheel *gxtime.TimerWheel
 )
 
 func init() {
-	span := 100e6 // 100ms
-	buckets := MaxWheelTimeSpan / span
-	wheel = gxtime.NewWheel(time.Duration(span), int(buckets)) // wheel longest span is 15 minute
-}
-
-func GetTimeWheel() *gxtime.Wheel {
-	return wheel
+	gxtime.InitDefaultTimerWheel()
+	defaultTimerWheel = gxtime.GetDefaultTimerWheel()
 }
 
 // getty base session
@@ -101,9 +96,7 @@ type session struct {
 	attrs *gxcontext.ValuesContext
 
 	// goroutines sync
-	grNum int32
-	// read goroutines done signal
-	rDone chan struct{}
+	grNum uatomic.Int32
 	lock  sync.RWMutex
 }
 
@@ -122,7 +115,6 @@ func newSession(endPoint EndPoint, conn Connection) *session {
 		done:  make(chan struct{}),
 		wait:  pendingDuration,
 		attrs: gxcontext.NewValuesContext(context.Background()),
-		rDone: make(chan struct{}),
 	}
 
 	ss.Connection.setSession(ss)
@@ -164,7 +156,6 @@ func (s *session) Reset() {
 		period: period,
 		wait:   pendingDuration,
 		attrs:  gxcontext.NewValuesContext(context.Background()),
-		rDone:  make(chan struct{}),
 	}
 }
 
@@ -214,10 +205,10 @@ func (s *session) Stat() string {
 	return fmt.Sprintf(
 		outputFormat,
 		s.sessionToken(),
-		atomic.LoadUint32(&(conn.readBytes)),
-		atomic.LoadUint32(&(conn.writeBytes)),
-		atomic.LoadUint32(&(conn.readPkgNum)),
-		atomic.LoadUint32(&(conn.writePkgNum)),
+		conn.readBytes.Load(),
+		conn.writeBytes.Load(),
+		conn.readPkgNum.Load(),
+		conn.writePkgNum.Load(),
 	)
 }
 
@@ -460,6 +451,34 @@ func (s *session) WriteBytesArray(pkgs ...[]byte) error {
 	return nil
 }
 
+func sessionTimerLoop(_ gxtime.TimerID, _ time.Time, arg interface{}) error {
+	ss, _ := arg.(*session)
+	if ss != nil && ss.IsClosed() {
+		return ErrSessionClosed
+	}
+
+	f := func() {
+		wsConn, wsFlag := ss.Connection.(*gettyWSConn)
+		if wsFlag {
+			err := wsConn.writePing()
+			if err != nil {
+				log.Warnf("wsConn.writePing() = error:%+v", perrors.WithStack(err))
+			}
+		}
+
+		ss.listener.OnCron(ss)
+	}
+
+	// if enable task pool, run @f asynchronously.
+	if taskPool := ss.EndPoint().GetTaskPool(); taskPool != nil {
+		taskPool.AddTaskAlways(f)
+		return nil
+	}
+
+	f()
+	return nil
+}
+
 // func (s *session) RunEventLoop() {
 func (s *session) run() {
 	if s.Connection == nil || s.listener == nil || s.writer == nil {
@@ -477,56 +496,12 @@ func (s *session) run() {
 		return
 	}
 
-	// start read/write gr
-	atomic.AddInt32(&(s.grNum), 2)
-	go s.handleLoop()
-	go s.handlePackage()
-}
-
-func (s *session) handleLoop() {
-	var (
-		wsFlag  bool
-		wsConn  *gettyWSConn
-		counter gxtime.CountWatch
-	)
-
-	defer func() {
-		if r := recover(); r != nil {
-			const size = 64 << 10
-			rBuf := make([]byte, size)
-			rBuf = rBuf[:runtime.Stack(rBuf, false)]
-			log.Errorf("[session.handleLoop] panic session %s: err=%s\n%s", s.sessionToken(), r, rBuf)
-		}
-
-		grNum := atomic.AddInt32(&(s.grNum), -1)
-		s.listener.OnClose(s)
-		log.Infof("%s, [session.handleLoop] goroutine exit now, left gr num %d", s.Stat(), grNum)
-		s.gc()
-	}()
-
-	wsConn, wsFlag = s.Connection.(*gettyWSConn)
-LOOP:
-	for {
-		select {
-		case <-s.done:
-			// this case branch assure the (session)handleLoop gr will exit after (session)handlePackage gr.
-			<-s.rDone
-			counter.Start()
-			if counter.Count() > s.wait.Nanoseconds() {
-				log.Infof("%s, [session.handleLoop] got done signal ", s.Stat())
-				break LOOP
-			}
-
-		case <-wheel.After(s.period):
-			if wsFlag {
-				err := wsConn.writePing()
-				if err != nil {
-					log.Warnf("wsConn.writePing() = error:%+v", perrors.WithStack(err))
-				}
-			}
-			s.listener.OnCron(s)
-		}
+	s.grNum.Add(1)
+	if _, err := defaultTimerWheel.AddTimer(sessionTimerLoop, gxtime.TimerLoop, s.period, s); err != nil {
+		panic(fmt.Sprintf("failed to add session %s to defaultTimerWheel", s.Stat()))
 	}
+	// start read gr
+	go s.handlePackage()
 }
 
 func (s *session) addTask(pkg interface{}) {
@@ -553,9 +528,7 @@ func (s *session) handlePackage() {
 			rBuf = rBuf[:runtime.Stack(rBuf, false)]
 			log.Errorf("[session.handlePackage] panic session %s: err=%s\n%s", s.sessionToken(), r, rBuf)
 		}
-
-		close(s.rDone)
-		grNum := atomic.AddInt32(&(s.grNum), -1)
+		grNum := s.grNum.Add(1)
 		log.Infof("%s, [session.handlePackage] gr will exit now, left gr num %d", s.sessionToken(), grNum)
 		s.stop()
 		if err != nil {
@@ -564,6 +537,9 @@ func (s *session) handlePackage() {
 				s.listener.OnError(s, err)
 			}
 		}
+
+		s.listener.OnClose(s)
+		s.gc()
 	}()
 
 	if _, ok := s.Connection.(*gettyTCPConn); ok {
@@ -702,8 +678,8 @@ func (s *session) handleUDPPackage() error {
 	if int(s.maxMsgLen<<1) < bufLen {
 		maxBufLen = int(s.maxMsgLen << 1)
 	}
-	bufp = gxbytes.GetBytes(maxBufLen)
-	defer gxbytes.PutBytes(bufp)
+	bufp = gxbytes.AcquireBytes(maxBufLen)
+	defer gxbytes.ReleaseBytes(bufp)
 	buf = *bufp
 	for {
 		if s.IsClosed() {
@@ -847,6 +823,5 @@ func (s *session) gc() {
 // or (session)handleLoop automatically. It's thread safe.
 func (s *session) Close() {
 	s.stop()
-	log.Infof("%s closed now. its current gr num is %d",
-		s.sessionToken(), atomic.LoadInt32(&(s.grNum)))
+	log.Infof("%s closed now. its current gr num is %d", s.sessionToken(), s.grNum.Load())
 }
