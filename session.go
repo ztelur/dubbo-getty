@@ -338,12 +338,12 @@ func (s *session) sessionToken() string {
 		s.name, s.EndPoint().EndPointType(), s.ID(), s.LocalAddr(), s.RemoteAddr())
 }
 
-func (s *session) WritePkg(pkg interface{}, timeout time.Duration) error {
+func (s *session) WritePkg(pkg interface{}, timeout time.Duration) (int, int, error) {
 	if pkg == nil {
-		return fmt.Errorf("@pkg is nil")
+		return 0, 0, fmt.Errorf("@pkg is nil")
 	}
 	if s.IsClosed() {
-		return ErrSessionClosed
+		return 0, 0, ErrSessionClosed
 	}
 
 	defer func() {
@@ -358,7 +358,7 @@ func (s *session) WritePkg(pkg interface{}, timeout time.Duration) error {
 	pkgBytes, err := s.writer.Write(s, pkg)
 	if err != nil {
 		log.Warnf("%s, [session.WritePkg] session.writer.Write(@pkg:%#v) = error:%+v", s.Stat(), pkg, err)
-		return perrors.WithStack(err)
+		return len(pkgBytes), 0, perrors.WithStack(err)
 	}
 	var udpCtxPtr *UDPContext
 	if udpCtx, ok := pkg.(UDPContext); ok {
@@ -375,32 +375,32 @@ func (s *session) WritePkg(pkg interface{}, timeout time.Duration) error {
 	if 0 < timeout {
 		s.Connection.SetWriteTimeout(timeout)
 	}
-	_, err = s.Connection.send(pkg)
+	var succssCount int
+	succssCount, err = s.Connection.send(pkg)
 	if err != nil {
 		log.Warnf("%s, [session.WritePkg] @s.Connection.Write(pkg:%#v) = err:%+v", s.Stat(), pkg, err)
-		return perrors.WithStack(err)
+		return len(pkgBytes), succssCount, perrors.WithStack(err)
 	}
-
-	return nil
+	return len(pkgBytes), succssCount, nil
 }
 
 // for codecs
-func (s *session) WriteBytes(pkg []byte) error {
+func (s *session) WriteBytes(pkg []byte) (int, error) {
 	if s.IsClosed() {
-		return ErrSessionClosed
+		return 0, ErrSessionClosed
 	}
 
-	// s.conn.SetWriteTimeout(time.Now().Add(s.wTimeout))
-	if _, err := s.Connection.send(pkg); err != nil {
-		return perrors.Wrapf(err, "s.Connection.Write(pkg len:%d)", len(pkg))
+	lg, err := s.Connection.send(pkg)
+	if err != nil {
+		return 0, perrors.Wrapf(err, "s.Connection.Write(pkg len:%d)", len(pkg))
 	}
-	return nil
+	return lg, nil
 }
 
 // Write multiple packages at once. so we invoke write sys.call just one time.
-func (s *session) WriteBytesArray(pkgs ...[]byte) error {
+func (s *session) WriteBytesArray(pkgs ...[]byte) (int, error) {
 	if s.IsClosed() {
-		return ErrSessionClosed
+		return 0, ErrSessionClosed
 	}
 	if len(pkgs) == 1 {
 		return s.WriteBytes(pkgs[0])
@@ -408,15 +408,17 @@ func (s *session) WriteBytesArray(pkgs ...[]byte) error {
 
 	// reduce syscall and memcopy for multiple packages
 	if _, ok := s.Connection.(*gettyTCPConn); ok {
-		if _, err := s.Connection.send(pkgs); err != nil {
-			return perrors.Wrapf(err, "s.Connection.Write(pkgs num:%d)", len(pkgs))
+		lg, err := s.Connection.send(pkgs)
+		if err != nil {
+			return 0, perrors.Wrapf(err, "s.Connection.Write(pkgs num:%d)", len(pkgs))
 		}
-		return nil
+		return lg, nil
 	}
 
 	// get len
 	var (
 		l      int
+		wlg    int
 		err    error
 		length int
 		arrp   *[]byte
@@ -428,7 +430,6 @@ func (s *session) WriteBytesArray(pkgs ...[]byte) error {
 	}
 
 	// merge the pkgs
-	//arr = make([]byte, length)
 	arrp = gxbytes.AcquireBytes(length)
 	defer gxbytes.ReleaseBytes(arrp)
 	arr = *arrp
@@ -439,8 +440,9 @@ func (s *session) WriteBytesArray(pkgs ...[]byte) error {
 		l += len(pkgs[i])
 	}
 
-	if err = s.WriteBytes(arr); err != nil {
-		return perrors.WithStack(err)
+	wlg, err = s.WriteBytes(arr)
+	if err != nil {
+		return 0, perrors.WithStack(err)
 	}
 
 	num := len(pkgs) - 1
@@ -448,12 +450,12 @@ func (s *session) WriteBytesArray(pkgs ...[]byte) error {
 		s.incWritePkgNum()
 	}
 
-	return nil
+	return wlg, nil
 }
 
 func sessionTimerLoop(_ gxtime.TimerID, _ time.Time, arg interface{}) error {
 	ss, _ := arg.(*session)
-	if ss != nil && ss.IsClosed() {
+	if ss == nil || ss.IsClosed() {
 		return ErrSessionClosed
 	}
 

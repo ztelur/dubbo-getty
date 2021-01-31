@@ -268,6 +268,7 @@ func (t *gettyTCPConn) send(pkg interface{}) (int, error) {
 		ok          bool
 		p           []byte
 		length      int
+		lg          int64
 	)
 
 	if t.compress == CompressNone && t.wTimeout > 0 {
@@ -285,19 +286,21 @@ func (t *gettyTCPConn) send(pkg interface{}) (int, error) {
 
 	if buffers, ok := pkg.([][]byte); ok {
 		netBuf := net.Buffers(buffers)
-		if length, err := netBuf.WriteTo(t.conn); err == nil {
-			t.writeBytes.Add((uint32)(length))
-			t.writePkgNum.Add((uint32)(len(buffers)))
+		lg, err = netBuf.WriteTo(t.conn)
+		if err == nil {
+			atomic.AddUint32(&t.writeBytes, (uint32)(lg))
+			atomic.AddUint32(&t.writePkgNum, (uint32)(len(buffers)))
 		}
 		log.Debugf("localAddr: %s, remoteAddr:%s, now:%s, length:%d, err:%s",
 			t.conn.LocalAddr(), t.conn.RemoteAddr(), currentTime, length, err)
-		return int(length), perrors.WithStack(err)
+		return int(lg), perrors.WithStack(err)
 	}
 
 	if p, ok = pkg.([]byte); ok {
-		if length, err = t.writer.Write(p); err == nil {
-			t.writeBytes.Add((uint32)(len(p)))
-			t.writePkgNum.Add(1)
+		length, err = t.writer.Write(p)
+		if err == nil {
+			atomic.AddUint32(&t.writeBytes, (uint32)(len(p)))
+			atomic.AddUint32(&t.writePkgNum, 1)
 		}
 		log.Debugf("localAddr: %s, remoteAddr:%s, now:%s, length:%d, err:%s",
 			t.conn.LocalAddr(), t.conn.RemoteAddr(), currentTime, length, err)
