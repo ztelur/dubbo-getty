@@ -288,8 +288,8 @@ func (t *gettyTCPConn) send(pkg interface{}) (int, error) {
 		netBuf := net.Buffers(buffers)
 		lg, err = netBuf.WriteTo(t.conn)
 		if err == nil {
-			atomic.AddUint32(&t.writeBytes, (uint32)(lg))
-			atomic.AddUint32(&t.writePkgNum, (uint32)(len(buffers)))
+			t.writeBytes.Add((uint32)(lg))
+			t.writePkgNum.Add((uint32)(len(buffers)))
 		}
 		log.Debugf("localAddr: %s, remoteAddr:%s, now:%s, length:%d, err:%s",
 			t.conn.LocalAddr(), t.conn.RemoteAddr(), currentTime, length, err)
@@ -299,8 +299,8 @@ func (t *gettyTCPConn) send(pkg interface{}) (int, error) {
 	if p, ok = pkg.([]byte); ok {
 		length, err = t.writer.Write(p)
 		if err == nil {
-			atomic.AddUint32(&t.writeBytes, (uint32)(len(p)))
-			atomic.AddUint32(&t.writePkgNum, 1)
+			t.writeBytes.Add((uint32)(len(p)))
+			t.writePkgNum.Add(1)
 		}
 		log.Debugf("localAddr: %s, remoteAddr:%s, now:%s, length:%d, err:%s",
 			t.conn.LocalAddr(), t.conn.RemoteAddr(), currentTime, length, err)

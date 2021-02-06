@@ -530,7 +530,7 @@ func (s *session) handlePackage() {
 			rBuf = rBuf[:runtime.Stack(rBuf, false)]
 			log.Errorf("[session.handlePackage] panic session %s: err=%s\n%s", s.sessionToken(), r, rBuf)
 		}
-		grNum := s.grNum.Add(1)
+		grNum := s.grNum.Add(-1)
 		log.Infof("%s, [session.handlePackage] gr will exit now, left gr num %d", s.sessionToken(), grNum)
 		s.stop()
 		if err != nil {
