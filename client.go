@@ -35,7 +35,6 @@ import (
 	"github.com/dubbogo/gost/net"
 	gxsync "github.com/dubbogo/gost/sync"
 	gxtime "github.com/dubbogo/gost/time"
-
 	"github.com/gorilla/websocket"
 	perrors "github.com/pkg/errors"
 )
