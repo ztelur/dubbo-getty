@@ -499,6 +499,7 @@ func (s *session) run() {
 	}
 
 	s.grNum.Add(1)
+	println(1111)
 	if _, err := defaultTimerWheel.AddTimer(sessionTimerLoop, gxtime.TimerLoop, s.period, s); err != nil {
 		panic(fmt.Sprintf("failed to add session %s to defaultTimerWheel", s.Stat()))
 	}
