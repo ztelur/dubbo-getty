@@ -24,16 +24,21 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
 import (
 	"github.com/apache/dubbo-getty"
 	"github.com/dubbogo/gost/sync"
+	"github.com/montanaflynn/stats"
 )
 
 var (
-	ip          = flag.String("ip", "127.0.0.1", "server IP")
+	concurrency = flag.Int("c", 1, "concurrency")
+	total       = flag.Int("n", 1, "total requests for all clients")
+	ip          = flag.String("ip", "127.0.0.1:8090", "server IP")
 	connections = flag.Int("conn", 1, "number of tcp connections")
 
 	taskPoolMode = flag.Bool("taskPool", false, "task pool mode")
@@ -41,26 +46,93 @@ var (
 	pprofPort    = flag.Int("pprof_port", 65431, "pprof http port")
 )
 
-var (
-	taskPool gxsync.GenericTaskPool
-)
+var taskPool gxsync.GenericTaskPool
+var Session getty.Session
 
-const CronPeriod = time.Second
+const CronPeriod = 20e9
 const WritePkgTimeout = 1e8
 
 func main() {
 	flag.Parse()
 
-	client := getty.NewTCPClient(
-		getty.WithServerAddress(*ip+":8090"),
-		getty.WithConnectionNumber(*connections),
-		getty.WithClientTaskPool(taskPool),
-	)
+	n := *concurrency
+	m := *total / n
 
-	client.RunEventLoop(NewHelloClientSession)
+	log.Printf("Servers: %+v\n\n", *ip)
+	log.Printf("concurrency: %d\nrequests per client: %d\n\n", n, m)
 
-	ClientRequest()
-	client.Close()
+	var wg sync.WaitGroup
+	wg.Add(n * m)
+
+	d := make([][]int64, n, n)
+	var trans uint64
+	var transOK uint64
+
+	totalT := time.Now().UnixNano()
+	for i := 0; i < n; i++ {
+		dt := make([]int64, 0, m)
+		d = append(d, dt)
+
+		go func(ii int) {
+			client := getty.NewTCPClient(
+				getty.WithServerAddress(*ip),
+				getty.WithConnectionNumber(*connections),
+				getty.WithClientTaskPool(taskPool),
+			)
+
+			client.RunEventLoop(NewHelloClientSession)
+
+			for j := 0; j < m; j++ {
+				atomic.AddUint64(&trans, 1)
+
+				t := time.Now().UnixNano()
+				msg := buildSendMsg()
+				_, _, err := Session.WritePkg(msg, WritePkgTimeout)
+				if err != nil {
+					log.Printf("Err:session.WritePkg(session{%s}, error{%v}", Session.Stat(), err)
+					Session.Close()
+				}
+
+				atomic.AddUint64(&transOK, 1)
+
+				t = time.Now().UnixNano() - t
+				d[ii] = append(d[ii], t)
+
+				wg.Done()
+			}
+
+			client.Close()
+		}(i)
+	}
+
+	wg.Wait()
+
+	totalT = time.Now().UnixNano() - totalT
+	totalT = totalT / 1000000
+	log.Printf("took %d ms for %d requests", totalT, n*m)
+
+	totalD := make([]int64, 0, n*m)
+	for _, k := range d {
+		totalD = append(totalD, k...)
+	}
+	totalD2 := make([]float64, 0, n*m)
+	for _, k := range totalD {
+		totalD2 = append(totalD2, float64(k))
+	}
+
+	mean, _ := stats.Mean(totalD2)
+	median, _ := stats.Median(totalD2)
+	max, _ := stats.Max(totalD2)
+	min, _ := stats.Min(totalD2)
+	p99, _ := stats.Percentile(totalD2, 99.9)
+
+	log.Printf("sent     requests    : %d\n", n*m)
+	log.Printf("received requests    : %d\n", atomic.LoadUint64(&trans))
+	log.Printf("received requests_OK : %d\n", atomic.LoadUint64(&transOK))
+	log.Printf("throughput  (TPS)    : %d\n", int64(n*m)*1000/totalT)
+	log.Printf("mean: %.f ns, median: %.f ns, max: %.f ns, min: %.f ns, p99: %.f ns\n", mean, median, max, min, p99)
+	log.Printf("mean: %d ms, median: %d ms, max: %d ms, min: %d ms, p99: %d ms\n", int64(mean/1000000), int64(median/1000000), int64(max/1000000), int64(min/1000000), int64(p99/1000000))
+
 }
 
 // NewHelloClientSession use for init client session
@@ -69,7 +141,7 @@ func NewHelloClientSession(session getty.Session) (err error) {
 	var EventListener = &MessageHandler{}
 
 	EventListener.SessionOnOpen = func(session getty.Session) {
-		Sessions = append(Sessions, session)
+		Session = session
 	}
 
 	tcpConn, ok := session.Conn().(*net.TCPConn)
@@ -122,7 +194,7 @@ func (h *MessageHandler) OnError(session getty.Session, err error) {
 }
 
 func (h *MessageHandler) OnClose(session getty.Session) {
-	log.Printf("OnClose session{%s} is closing......", session.Stat())
+	log.Printf("hhf OnClose session{%s} is closing......", session.Stat())
 }
 
 func (h *MessageHandler) OnMessage(session getty.Session, pkg interface{}) {
@@ -137,11 +209,6 @@ func (h *MessageHandler) OnMessage(session getty.Session, pkg interface{}) {
 
 func (h *MessageHandler) OnCron(session getty.Session) {
 	log.Printf("OnCron....")
-	active := session.GetActive()
-	if CronPeriod < time.Since(active) {
-		log.Printf("OnCorn session{%s} timeout{%s}", session.Stat(), time.Since(active).String())
-		session.Close()
-	}
 }
 
 type PackageHandler struct{}
@@ -189,18 +256,6 @@ func (h *PackageHandler) Write(ss getty.Session, p interface{}) ([]byte, error) 
 	return pkgStreams[:pos], nil
 }
 
-var (
-	Sessions []getty.Session
-)
-
-func ClientRequest() {
-	for _, session := range Sessions {
-		ss := session
-		_, _, err := ss.WritePkg("hello", WritePkgTimeout)
-		if err != nil {
-			log.Printf("session.WritePkg(session{%s}, error{%v}", ss.Stat(), err)
-			ss.Close()
-		}
-	}
-
+func buildSendMsg() string {
+	return "如果扫描程序匹配了一行文本并且没有遇到错误，则 sc.Scan() 方法返回 true 。因此，只有当扫描仪的缓冲区中有一行文本时，才会调用 for 循环的主体。这意味着我们修改后的 CountLines 正确处理没有换行符的情况，并且还处理文件为空的情况。"
 }

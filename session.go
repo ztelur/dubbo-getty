@@ -476,7 +476,7 @@ func sessionTimerLoop(_ gxtime.TimerID, _ time.Time, arg interface{}) error {
 		taskPool.AddTaskAlways(f)
 		return nil
 	}
-
+	println("timerHHHF ...")
 	f()
 	return nil
 }
@@ -499,9 +499,8 @@ func (s *session) run() {
 	}
 
 	s.grNum.Add(1)
-	println(1111)
 	if _, err := defaultTimerWheel.AddTimer(sessionTimerLoop, gxtime.TimerLoop, s.period, s); err != nil {
-		panic(fmt.Sprintf("failed to add session %s to defaultTimerWheel", s.Stat()))
+		panic(fmt.Sprintf("failed to add session %s to defaultTimerWheel err:%v", s.Stat(), err))
 	}
 	// start read gr
 	go s.handlePackage()
@@ -609,7 +608,7 @@ func (s *session) handleTCPPackage() error {
 					break
 				}
 				if perrors.Cause(err) == io.EOF {
-					log.Infof("%s, [session.conn.read] = error:%+v", s.sessionToken(), perrors.WithStack(err))
+					log.Infof("%s, session.conn read EOF, client send over, session exit", s.sessionToken())
 					err = nil
 					exit = true
 					break

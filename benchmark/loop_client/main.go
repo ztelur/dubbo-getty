@@ -24,58 +24,72 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 )
 
 import (
 	"github.com/apache/dubbo-getty"
-	gxsync "github.com/dubbogo/gost/sync"
+	"github.com/dubbogo/gost/sync"
 )
 
 var (
+	concurrency = flag.Int("c", 1, "concurrency")
+	total       = flag.Int("n", 1, "total requests for all clients")
+	ip          = flag.String("ip", "127.0.0.1:8090", "server IP")
+	connections = flag.Int("conn", 1, "number of tcp connections")
+
 	taskPoolMode = flag.Bool("taskPool", false, "task pool mode")
 	taskPoolSize = flag.Int("task_pool_size", 2000, "task poll size")
-	pprofPort    = flag.Int("pprof_port", 65432, "pprof http port")
+	pprofPort    = flag.Int("pprof_port", 65431, "pprof http port")
 )
 
-var (
-	taskPool gxsync.GenericTaskPool
-)
+var taskPool gxsync.GenericTaskPool
+var Session getty.Session
 
-const CronPeriod = time.Second
+const CronPeriod = 20e9
+const WritePkgTimeout = 1e8
 
 func main() {
 	flag.Parse()
 
-	go func() {
-		http.ListenAndServe(fmt.Sprintf(":%d", *pprofPort), nil)
-	}()
+	n := *concurrency
 
-	options := []getty.ServerOption{getty.WithLocalAddress(":8090")}
+	log.Printf("Servers: %+v\n\n", *ip)
+	for i := 0; i < n; i++ {
+		go func(ii int) {
+			client := getty.NewTCPClient(
+				getty.WithServerAddress(*ip),
+				getty.WithConnectionNumber(*connections),
+				getty.WithClientTaskPool(taskPool),
+			)
 
-	if *taskPoolMode {
-		taskPool = gxsync.NewTaskPoolSimple(*taskPoolSize)
-		options = append(options, getty.WithServerTaskPool(taskPool))
+			client.RunEventLoop(NewHelloClientSession)
+
+			for {
+				msg := buildSendMsg()
+				_, _, err := Session.WritePkg(msg, WritePkgTimeout)
+				if err != nil {
+					log.Printf("Err:session.WritePkg(session{%s}, error{%v}", Session.Stat(), err)
+					Session.Close()
+				}
+			}
+
+			client.Close()
+		}(i)
 	}
 
-	server := getty.NewTCPServer(options...)
-
-	go server.RunEventLoop(NewHelloServerSession)
-	log.Printf("getty server start, listening at: 8090")
-
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Interrupt, syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGINT)
-	<-signals
-	server.Close()
+	c := make(chan int)
+	<-c
 }
 
-func NewHelloServerSession(session getty.Session) (err error) {
+// NewHelloClientSession use for init client session
+func NewHelloClientSession(session getty.Session) (err error) {
 	var pkgHandler = &PackageHandler{}
 	var EventListener = &MessageHandler{}
+
+	EventListener.SessionOnOpen = func(session getty.Session) {
+		Session = session
+	}
 
 	tcpConn, ok := session.Conn().(*net.TCPConn)
 	if !ok {
@@ -127,7 +141,7 @@ func (h *MessageHandler) OnError(session getty.Session, err error) {
 }
 
 func (h *MessageHandler) OnClose(session getty.Session) {
-	log.Printf("OnClose session{%s} is closing......", session.Stat())
+	log.Printf("hhf OnClose session{%s} is closing......", session.Stat())
 }
 
 func (h *MessageHandler) OnMessage(session getty.Session, pkg interface{}) {
@@ -142,11 +156,6 @@ func (h *MessageHandler) OnMessage(session getty.Session, pkg interface{}) {
 
 func (h *MessageHandler) OnCron(session getty.Session) {
 	log.Printf("OnCron....")
-	active := session.GetActive()
-	if CronPeriod < time.Since(active) {
-		log.Printf("OnCorn session{%s} timeout{%s}", session.Stat(), time.Since(active).String())
-		session.Close()
-	}
 }
 
 type PackageHandler struct{}
@@ -192,4 +201,8 @@ func (h *PackageHandler) Write(ss getty.Session, p interface{}) ([]byte, error) 
 	copy(pkgStreams[start:pos], pkg[:])
 
 	return pkgStreams[:pos], nil
+}
+
+func buildSendMsg() string {
+	return "如果扫描程序匹配了一行文本并且没有遇到错误，则 sc.Scan() 方法返回 true 。因此，只有当扫描仪的缓冲区中有一行文本时，才会调用 for 循环的主体。这意味着我们修改后的 CountLines 正确处理没有换行符的情况，并且还处理文件为空的情况。"
 }
