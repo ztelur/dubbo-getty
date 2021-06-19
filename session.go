@@ -476,7 +476,6 @@ func sessionTimerLoop(_ gxtime.TimerID, _ time.Time, arg interface{}) error {
 		taskPool.AddTaskAlways(f)
 		return nil
 	}
-	println("timerHHHF ...")
 	f()
 	return nil
 }
