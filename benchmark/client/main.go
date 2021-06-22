@@ -47,7 +47,6 @@ var (
 )
 
 var taskPool gxsync.GenericTaskPool
-var Session getty.Session
 
 const CronPeriod = 20e9
 const WritePkgTimeout = 1e8
@@ -80,6 +79,48 @@ func main() {
 				getty.WithClientTaskPool(taskPool),
 			)
 
+			var tmpSession getty.Session
+			var NewHelloClientSession = func(session getty.Session) (err error) {
+				var pkgHandler = &PackageHandler{}
+				var EventListener = &MessageHandler{}
+
+				EventListener.SessionOnOpen = func(session getty.Session) {
+					tmpSession = session
+				}
+
+				tcpConn, ok := session.Conn().(*net.TCPConn)
+				if !ok {
+					panic(fmt.Sprintf("newSession: %s, session.conn{%#v} is not tcp connection", session.Stat(), session.Conn()))
+				}
+
+				if err = tcpConn.SetNoDelay(true); err != nil {
+					return err
+				}
+				if err = tcpConn.SetKeepAlive(true); err != nil {
+					return err
+				}
+				if err = tcpConn.SetKeepAlivePeriod(10 * time.Second); err != nil {
+					return err
+				}
+				if err = tcpConn.SetReadBuffer(262144); err != nil {
+					return err
+				}
+				if err = tcpConn.SetWriteBuffer(524288); err != nil {
+					return err
+				}
+
+				session.SetName("hello")
+				session.SetMaxMsgLen(128 * 1024) // max message package length is 128k
+				session.SetReadTimeout(time.Second)
+				session.SetWriteTimeout(5 * time.Second)
+				session.SetCronPeriod(int(CronPeriod / 1e6))
+				session.SetWaitTime(time.Second)
+
+				session.SetPkgHandler(pkgHandler)
+				session.SetEventListener(EventListener)
+				return nil
+			}
+
 			client.RunEventLoop(NewHelloClientSession)
 
 			for j := 0; j < m; j++ {
@@ -87,10 +128,9 @@ func main() {
 
 				t := time.Now().UnixNano()
 				msg := buildSendMsg()
-				_, _, err := Session.WritePkg(msg, WritePkgTimeout)
+				_, _, err := tmpSession.WritePkg(msg, WritePkgTimeout)
 				if err != nil {
-					log.Printf("Err:session.WritePkg(session{%s}, error{%v}", Session.Stat(), err)
-					Session.Close()
+					log.Printf("Err:session.WritePkg(session{%s}, error{%v}", tmpSession.Stat(), err)
 				}
 
 				atomic.AddUint64(&transOK, 1)
@@ -115,6 +155,7 @@ func main() {
 	for _, k := range d {
 		totalD = append(totalD, k...)
 	}
+
 	totalD2 := make([]float64, 0, n*m)
 	for _, k := range totalD {
 		totalD2 = append(totalD2, float64(k))
@@ -133,48 +174,6 @@ func main() {
 	log.Printf("mean: %.f ns, median: %.f ns, max: %.f ns, min: %.f ns, p99: %.f ns\n", mean, median, max, min, p99)
 	log.Printf("mean: %d ms, median: %d ms, max: %d ms, min: %d ms, p99: %d ms\n", int64(mean/1000000), int64(median/1000000), int64(max/1000000), int64(min/1000000), int64(p99/1000000))
 
-}
-
-// NewHelloClientSession use for init client session
-func NewHelloClientSession(session getty.Session) (err error) {
-	var pkgHandler = &PackageHandler{}
-	var EventListener = &MessageHandler{}
-
-	EventListener.SessionOnOpen = func(session getty.Session) {
-		Session = session
-	}
-
-	tcpConn, ok := session.Conn().(*net.TCPConn)
-	if !ok {
-		panic(fmt.Sprintf("newSession: %s, session.conn{%#v} is not tcp connection", session.Stat(), session.Conn()))
-	}
-
-	if err = tcpConn.SetNoDelay(true); err != nil {
-		return err
-	}
-	if err = tcpConn.SetKeepAlive(true); err != nil {
-		return err
-	}
-	if err = tcpConn.SetKeepAlivePeriod(10 * time.Second); err != nil {
-		return err
-	}
-	if err = tcpConn.SetReadBuffer(262144); err != nil {
-		return err
-	}
-	if err = tcpConn.SetWriteBuffer(524288); err != nil {
-		return err
-	}
-
-	session.SetName("hello")
-	session.SetMaxMsgLen(128 * 1024) // max message package length is 128k
-	session.SetReadTimeout(time.Second)
-	session.SetWriteTimeout(5 * time.Second)
-	session.SetCronPeriod(int(CronPeriod / 1e6))
-	session.SetWaitTime(time.Second)
-
-	session.SetPkgHandler(pkgHandler)
-	session.SetEventListener(EventListener)
-	return nil
 }
 
 type MessageHandler struct {
