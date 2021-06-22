@@ -2,7 +2,6 @@ module github.com/apache/dubbo-getty
 
 go 1.14
 
-replace github.com/dubbogo/gost v1.11.0 => /Users/haohongfan/goproject/dubbo/gost
 
 require (
 	github.com/dubbogo/gost v1.11.0
