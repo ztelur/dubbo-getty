@@ -2,7 +2,6 @@ module github.com/apache/dubbo-getty
 
 go 1.14
 
-
 require (
 	github.com/dubbogo/gost v1.11.0
 	github.com/golang/snappy v0.0.1
