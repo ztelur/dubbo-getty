@@ -266,7 +266,7 @@ func (s *server) runTcpEventLoop(newSession NewSessionCallback) {
 		)
 		for {
 			if s.IsClosed() {
-				log.Warnf("server{%s} stop accepting client connect request.", s.addr)
+				log.Infof("server{%s} stop accepting client connect request.", s.addr)
 				return
 			}
 			if delay != 0 {

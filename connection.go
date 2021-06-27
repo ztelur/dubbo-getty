@@ -301,7 +301,7 @@ func (t *gettyTCPConn) send(pkg interface{}) (int, error) {
 			t.writeBytes.Add((uint32)(len(p)))
 			t.writePkgNum.Add(1)
 		}
-		log.Debugf("localAddr: %s, remoteAddr:%s, now:%s, length:%d, err:%s",
+		log.Debugf("localAddr: %s, remoteAddr:%s, now:%s, length:%d, err:%v",
 			t.conn.LocalAddr(), t.conn.RemoteAddr(), currentTime, length, err)
 		return length, perrors.WithStack(err)
 	}
