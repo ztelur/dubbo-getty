@@ -20,17 +20,16 @@ package main
 import (
 	"flag"
 	"path/filepath"
-
-	tls "github.com/apache/dubbo-getty/demo/hello/tls"
 )
 
 import (
-	"github.com/apache/dubbo-getty"
 	gxsync "github.com/dubbogo/gost/sync"
 )
 
 import (
+	"github.com/apache/dubbo-getty"
 	"github.com/apache/dubbo-getty/demo/util"
+	tls "github.com/apache/dubbo-getty/demo/hello/tls"
 )
 
 var (
