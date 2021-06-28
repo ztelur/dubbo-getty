@@ -19,17 +19,17 @@ package main
 
 import (
 	"flag"
-	tls "github.com/apache/dubbo-getty/demo/hello/tls"
 	"path/filepath"
 )
 
 import (
-	"github.com/apache/dubbo-getty"
 	gxsync "github.com/dubbogo/gost/sync"
 )
 
 import (
+	"github.com/apache/dubbo-getty"
 	"github.com/apache/dubbo-getty/demo/util"
+	tls "github.com/apache/dubbo-getty/demo/hello/tls"
 )
 
 var (
@@ -39,9 +39,7 @@ var (
 	Sessions     []getty.Session
 )
 
-var (
-	taskPool gxsync.GenericTaskPool
-)
+var taskPool gxsync.GenericTaskPool
 
 func main() {
 	flag.Parse()
@@ -62,7 +60,8 @@ func main() {
 	if *taskPoolMode {
 		taskPool = gxsync.NewTaskPoolSimple(*taskPoolSize)
 	}
-	options := []getty.ServerOption{getty.WithLocalAddress(":8090"),
+	options := []getty.ServerOption{
+		getty.WithLocalAddress(":8090"),
 		getty.WithServerSslEnabled(true),
 		getty.WithServerTlsConfigBuilder(c),
 		getty.WithServerTaskPool(taskPool),

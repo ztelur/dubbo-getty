@@ -23,11 +23,11 @@ import (
 )
 
 import (
-	"github.com/apache/dubbo-getty"
 	"github.com/dubbogo/gost/sync"
 )
 
 import (
+	"github.com/apache/dubbo-getty"
 	"github.com/apache/dubbo-getty/demo/hello"
 	tls "github.com/apache/dubbo-getty/demo/hello/tls"
 	"github.com/apache/dubbo-getty/demo/util"
@@ -42,9 +42,7 @@ var (
 	pprofPort    = flag.Int("pprof_port", 65431, "pprof http port")
 )
 
-var (
-	taskPool gxsync.GenericTaskPool
-)
+var taskPool gxsync.GenericTaskPool
 
 func main() {
 	flag.Parse()

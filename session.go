@@ -518,9 +518,7 @@ func (s *session) addTask(pkg interface{}) {
 }
 
 func (s *session) handlePackage() {
-	var (
-		err error
-	)
+	var err error
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -801,9 +799,7 @@ func (s *session) stop() {
 }
 
 func (s *session) gc() {
-	var (
-		conn Connection
-	)
+	var conn Connection
 
 	s.lock.Lock()
 	if s.attrs != nil {
