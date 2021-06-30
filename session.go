@@ -58,9 +58,7 @@ const (
 // session
 /////////////////////////////////////////
 
-var (
-	defaultTimerWheel *gxtime.TimerWheel
-)
+var defaultTimerWheel *gxtime.TimerWheel
 
 func init() {
 	gxtime.InitDefaultTimerWheel()

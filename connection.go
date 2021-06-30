@@ -34,17 +34,13 @@ import (
 	uatomic "go.uber.org/atomic"
 )
 
-var (
-	launchTime = time.Now()
-)
+var launchTime = time.Now()
 
 /////////////////////////////////////////
 // getty connection
 /////////////////////////////////////////
 
-var (
-	connID uatomic.Uint32
-)
+var connID uatomic.Uint32
 
 type gettyConn struct {
 	id            uint32

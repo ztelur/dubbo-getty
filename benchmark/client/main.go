@@ -48,8 +48,10 @@ var (
 
 var taskPool gxsync.GenericTaskPool
 
-const CronPeriod = 20e9
-const WritePkgTimeout = 1e8
+const (
+	CronPeriod      = 20e9
+	WritePkgTimeout = 1e8
+)
 
 func main() {
 	flag.Parse()
@@ -80,9 +82,9 @@ func main() {
 			)
 
 			var tmpSession getty.Session
-			var NewHelloClientSession = func(session getty.Session) (err error) {
-				var pkgHandler = &PackageHandler{}
-				var EventListener = &MessageHandler{}
+			NewHelloClientSession := func(session getty.Session) (err error) {
+				pkgHandler := &PackageHandler{}
+				EventListener := &MessageHandler{}
 
 				EventListener.SessionOnOpen = func(session getty.Session) {
 					tmpSession = session
@@ -173,7 +175,6 @@ func main() {
 	log.Printf("throughput  (TPS)    : %d\n", int64(n*m)*1000/totalT)
 	log.Printf("mean: %.f ns, median: %.f ns, max: %.f ns, min: %.f ns, p99: %.f ns\n", mean, median, max, min, p99)
 	log.Printf("mean: %d ms, median: %d ms, max: %d ms, min: %d ms, p99: %d ms\n", int64(mean/1000000), int64(median/1000000), int64(max/1000000), int64(min/1000000), int64(p99/1000000))
-
 }
 
 type MessageHandler struct {

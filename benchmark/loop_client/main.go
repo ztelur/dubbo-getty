@@ -45,8 +45,10 @@ var (
 
 var taskPool gxsync.GenericTaskPool
 
-const CronPeriod = 20e9
-const WritePkgTimeout = 1e8
+const (
+	CronPeriod      = 20e9
+	WritePkgTimeout = 1e8
+)
 
 func main() {
 	flag.Parse()
@@ -63,9 +65,9 @@ func main() {
 			)
 
 			var tmpSession getty.Session
-			var NewHelloClientSession = func(session getty.Session) (err error) {
-				var pkgHandler = &PackageHandler{}
-				var EventListener = &MessageHandler{}
+			NewHelloClientSession := func(session getty.Session) (err error) {
+				pkgHandler := &PackageHandler{}
+				EventListener := &MessageHandler{}
 
 				EventListener.SessionOnOpen = func(session getty.Session) {
 					tmpSession = session
