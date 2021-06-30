@@ -205,5 +205,5 @@ func (h *PackageHandler) Write(ss getty.Session, p interface{}) ([]byte, error) 
 }
 
 func buildSendMsg() string {
-	return "如果扫描程序匹配了一行文本并且没有遇到错误，则 sc.Scan() 方法返回 true 。因此，只有当扫描仪的缓冲区中有一行文本时，才会调用 for 循环的主体。这意味着我们修改后的 CountLines 正确处理没有换行符的情况，并且还处理文件为空的情况。"
+	return "Now we know what the itables look like, but where do they come from? Go's dynamic type conversions mean that it isn't reasonable for the compiler or linker to precompute all possible itables: there are too many (interface type, concrete type) pairs, and most won't be needed. Instead, the compiler generates a type description structure for each concrete type like Binary or int or func(map[int]string). Among other metadata, the type description structure contains a list of the methods implemented by that type. Similarly, the compiler generates a (different) type description structure for each interface type like Stringer; it too contains a method list. The interface runtime computes the itable by looking for each method listed in the interface type's method table in the concrete type's method table. The runtime caches the itable after generating it, so that this correspondence need only be computed once"
 }
