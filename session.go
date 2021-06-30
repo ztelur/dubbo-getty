@@ -453,7 +453,7 @@ func (s *session) WriteBytesArray(pkgs ...[]byte) (int, error) {
 	return wlg, nil
 }
 
-func sessionTimerLoop(_ gxtime.TimerID, _ time.Time, arg interface{}) error {
+func heartbeat(_ gxtime.TimerID, _ time.Time, arg interface{}) error {
 	ss, _ := arg.(*session)
 	if ss == nil || ss.IsClosed() {
 		return ErrSessionClosed
@@ -498,7 +498,7 @@ func (s *session) run() {
 	}
 
 	s.grNum.Add(1)
-	if _, err := defaultTimerWheel.AddTimer(sessionTimerLoop, gxtime.TimerLoop, s.period, s); err != nil {
+	if _, err := defaultTimerWheel.AddTimer(heartbeat, gxtime.TimerLoop, s.period, s); err != nil {
 		panic(fmt.Sprintf("failed to add session %s to defaultTimerWheel err:%v", s.Stat(), err))
 	}
 	// start read gr
