@@ -116,8 +116,6 @@ func main() {
 					tmpSession.Close()
 				}
 			}
-
-			client.Close()
 		}(i)
 	}
 
