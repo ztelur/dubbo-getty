@@ -43,9 +43,7 @@ var (
 	pprofPort    = flag.Int("pprof_port", 65432, "pprof http port")
 )
 
-var (
-	taskPool gxsync.GenericTaskPool
-)
+var taskPool gxsync.GenericTaskPool
 
 const CronPeriod = 20e9
 
@@ -75,8 +73,8 @@ func main() {
 }
 
 func NewHelloServerSession(session getty.Session) (err error) {
-	var pkgHandler = &PackageHandler{}
-	var EventListener = &MessageHandler{}
+	pkgHandler := &PackageHandler{}
+	EventListener := &MessageHandler{}
 
 	tcpConn, ok := session.Conn().(*net.TCPConn)
 	if !ok {

@@ -28,8 +28,8 @@ import (
 
 import (
 	"github.com/apache/dubbo-getty"
-	"github.com/apache/dubbo-getty/demo/util"
 	tls "github.com/apache/dubbo-getty/demo/hello/tls"
+	"github.com/apache/dubbo-getty/demo/util"
 )
 
 var (
