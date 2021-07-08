@@ -495,10 +495,11 @@ func (s *session) run() {
 		return
 	}
 
-	s.grNum.Add(1)
 	if _, err := defaultTimerWheel.AddTimer(heartbeat, gxtime.TimerLoop, s.period, s); err != nil {
 		panic(fmt.Sprintf("failed to add session %s to defaultTimerWheel err:%v", s.Stat(), err))
 	}
+
+	s.grNum.Add(1)
 	// start read gr
 	go s.handlePackage()
 }
