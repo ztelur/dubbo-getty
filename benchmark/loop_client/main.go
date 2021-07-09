@@ -28,7 +28,7 @@ import (
 )
 
 import (
-	"github.com/apache/dubbo-getty"
+	getty "github.com/apache/dubbo-getty"
 	"github.com/dubbogo/gost/sync"
 )
 
