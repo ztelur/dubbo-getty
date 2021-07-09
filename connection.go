@@ -389,9 +389,9 @@ func (u *gettyUDPConn) recv(p []byte) (int, *net.UDPAddr, error) {
 		// Optimization: update read deadline only if more than 25%
 		// of the last read deadline exceeded.
 		// See https://github.com/golang/go/issues/15133 for details.
-		currentTime = time.Now()
+		currentTime := time.Now()
 		if currentTime.Unix()-u.rLastDeadline > int64(u.rTimeout>>2) {
-			if err = u.conn.SetReadDeadline(currentTime.Add(u.rTimeout)); err != nil {
+			if err := u.conn.SetReadDeadline(currentTime.Add(u.rTimeout)); err != nil {
 				return 0, nil, perrors.WithStack(err)
 			}
 			u.rLastDeadline = currentTime.Unix()
