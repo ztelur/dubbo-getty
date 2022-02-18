@@ -86,6 +86,7 @@ type server struct {
 }
 
 func (s *server) init(opts ...ServerOption) {
+	// 经典的 options 方式
 	for _, opt := range opts {
 		opt(&(s.ServerOptions))
 	}
@@ -193,12 +194,14 @@ func (s *server) listenTCP() error {
 	)
 
 	if len(s.addr) == 0 || !strings.Contains(s.addr, ":") {
+		// 如果地址中没有端口，则监听随机端口
 		streamListener, err = gxnet.ListenOnTCPRandomPort(s.addr)
 		if err != nil {
 			return perrors.Wrapf(err, "gxnet.ListenOnTCPRandomPort(addr:%s)", s.addr)
 		}
 	} else {
 		if s.sslEnabled {
+			// 如果是 ssl，则要创建对应的 sql 配置
 			if sslConfig, buildTlsConfErr := s.tlsConfigBuilder.BuildTlsConfig(); buildTlsConfErr == nil && sslConfig != nil {
 				streamListener, err = tls.Listen("tcp", s.addr, sslConfig)
 			}
@@ -216,6 +219,7 @@ func (s *server) listenTCP() error {
 	return nil
 }
 
+// 监听 UDP
 func (s *server) listenUDP() error {
 	var (
 		err         error
@@ -229,6 +233,7 @@ func (s *server) listenUDP() error {
 			return perrors.Wrapf(err, "gxnet.ListenOnUDPRandomPort(addr:%s)", s.addr)
 		}
 	} else {
+		// 调用 UDP 的相关接口进行监听
 		localAddr, err = net.ResolveUDPAddr("udp", s.addr)
 		if err != nil {
 			return perrors.Wrapf(err, "net.ResolveUDPAddr(udp, addr:%s)", s.addr)
@@ -248,6 +253,7 @@ func (s *server) listenUDP() error {
 // Listen announces on the local network address.
 func (s *server) listen() error {
 	switch s.endPointType {
+	// 处理
 	case TCP_SERVER, WS_SERVER, WSS_SERVER:
 		return perrors.WithStack(s.listenTCP())
 	case UDP_ENDPOINT:
@@ -258,6 +264,7 @@ func (s *server) listen() error {
 }
 
 func (s *server) accept(newSession NewSessionCallback) (Session, error) {
+	// 调用 streamListener 的 Accept
 	conn, err := s.streamListener.Accept()
 	if err != nil {
 		return nil, perrors.WithStack(err)
@@ -266,8 +273,9 @@ func (s *server) accept(newSession NewSessionCallback) (Session, error) {
 		log.Warnf("conn.localAddr{%s} == conn.RemoteAddr", conn.LocalAddr().String(), conn.RemoteAddr().String())
 		return nil, perrors.WithStack(errSelfConnect)
 	}
-
+	// 使用原始 conn 构建自己的 TCPSession
 	ss := newTCPSession(conn, s)
+	// 创建 newSession
 	err = newSession(ss)
 	if err != nil {
 		conn.Close()
@@ -279,7 +287,9 @@ func (s *server) accept(newSession NewSessionCallback) (Session, error) {
 
 func (s *server) runTCPEventLoop(newSession NewSessionCallback) {
 	s.wg.Add(1)
+
 	go func() {
+		// 协程退出时调用Done
 		defer s.wg.Done()
 		var (
 			err    error
@@ -291,9 +301,11 @@ func (s *server) runTCPEventLoop(newSession NewSessionCallback) {
 				log.Infof("server{%s} stop accepting client connect request.", s.addr)
 				return
 			}
+			// 如果设置了delay，那么就等待
 			if delay != 0 {
 				<-gxtime.After(delay)
 			}
+			// 接受
 			client, err = s.accept(newSession)
 			if err != nil {
 				if netErr, ok := perrors.Cause(err).(net.Error); ok && netErr.Temporary() {
@@ -311,6 +323,7 @@ func (s *server) runTCPEventLoop(newSession NewSessionCallback) {
 				continue
 			}
 			delay = 0
+			// 拿到一个 session 或者说 connection 后，就开始执行
 			client.(*session).run()
 		}
 	}()
@@ -484,7 +497,9 @@ func (s *server) runWSSEventLoop(newSession NewSessionCallback) {
 
 // RunEventLoop serves client request.
 // @newSession: new connection callback
+// 启动监听
 func (s *server) RunEventLoop(newSession NewSessionCallback) {
+	// 调用 listen 来启动，这里会根据不同的协议，调用不同的 listen
 	if err := s.listen(); err != nil {
 		panic(fmt.Errorf("server.listen() = error:%+v", perrors.WithStack(err)))
 	}
@@ -493,6 +508,7 @@ func (s *server) RunEventLoop(newSession NewSessionCallback) {
 	case TCP_SERVER:
 		s.runTCPEventLoop(newSession)
 	case UDP_ENDPOINT:
+		// 这里就是生成对应的 UDP endpoint
 		s.runUDPEventLoop(newSession)
 	case WS_SERVER:
 		s.runWSEventLoop(newSession)

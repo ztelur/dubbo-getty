@@ -381,12 +381,13 @@ func (s *session) WritePkg(pkg interface{}, timeout time.Duration) (int, int, er
 			log.Errorf("[session.WritePkg] panic session %s: err=%s\n%s", s.sessionToken(), r, rBuf)
 		}
 	}()
-
+	// 会调用 writer 进行处理，将 interface 进行序列化，获取对应的 pkgBytes
 	pkgBytes, err := s.writer.Write(s, pkg)
 	if err != nil {
 		log.Warnf("%s, [session.WritePkg] session.writer.Write(@pkg:%#v) = error:%+v", s.Stat(), pkg, err)
 		return len(pkgBytes), 0, perrors.WithStack(err)
 	}
+
 	var udpCtxPtr *UDPContext
 	if udpCtx, ok := pkg.(UDPContext); ok {
 		udpCtxPtr = &udpCtx
@@ -405,6 +406,7 @@ func (s *session) WritePkg(pkg interface{}, timeout time.Duration) (int, int, er
 		s.Connection.SetWriteTimeout(timeout)
 	}
 	var succssCount int
+	// 通过 connection send 出去
 	succssCount, err = s.Connection.send(pkg)
 	if err != nil {
 		log.Warnf("%s, [session.WritePkg] @s.Connection.Write(pkg:%#v) = err:%+v", s.Stat(), pkg, err)
@@ -536,6 +538,7 @@ func heartbeat(_ gxtime.TimerID, _ time.Time, arg interface{}) error {
 
 // func (s *session) RunEventLoop() {
 func (s *session) run() {
+	// 校验前置数据是否都正确
 	if s.Connection == nil || s.listener == nil || s.writer == nil {
 		errStr := fmt.Sprintf("session{name:%s, conn:%#v, listener:%#v, writer:%#v}",
 			s.name, s.Connection, s.listener, s.writer)
@@ -544,19 +547,22 @@ func (s *session) run() {
 	}
 
 	// call session opened
+	// 设置成生效
 	s.UpdateActive()
+	// 调用  onOpen 回掉
 	if err := s.listener.OnOpen(s); err != nil {
 		log.Errorf("[OnOpen] session %s, error: %#v", s.Stat(), err)
 		s.Close()
 		return
 	}
-
+	// 启动时间轮，进行心跳
 	if _, err := defaultTimerWheel.AddTimer(heartbeat, gxtime.TimerLoop, s.period, s); err != nil {
 		panic(fmt.Sprintf("failed to add session %s to defaultTimerWheel err:%v", s.Stat(), err))
 	}
 
 	s.grNum.Add(1)
 	// start read gr
+	// 启动读取数据的协程
 	go s.handlePackage()
 }
 
@@ -565,6 +571,7 @@ func (s *session) addTask(pkg interface{}) {
 		s.listener.OnMessage(s, pkg)
 		s.incReadPkgNum()
 	}
+	// 如果有 taskPool，则交给 task pool 处理，否则直接调用
 	if taskPool := s.EndPoint().GetTaskPool(); taskPool != nil {
 		taskPool.AddTaskAlways(f)
 		return
@@ -588,15 +595,17 @@ func (s *session) handlePackage() {
 		if err != nil {
 			log.Errorf("%s, [session.handlePackage] error:%+v", s.sessionToken(), perrors.WithStack(err))
 			if s != nil || s.listener != nil {
+				// 报告出错
 				s.listener.OnError(s, err)
 			}
 		}
-
+		// 报告关闭
 		s.listener.OnClose(s)
 		s.gc()
 	}()
 
 	if _, ok := s.Connection.(*gettyTCPConn); ok {
+		// 在 TCP Server 的场景下
 		if s.reader == nil {
 			errStr := fmt.Sprintf("session{name:%s, conn:%#v, reader:%#v}", s.name, s.Connection, s.reader)
 			log.Error(errStr)
@@ -614,6 +623,7 @@ func (s *session) handlePackage() {
 }
 
 // get package from tcp stream(packet)
+// 从 tcp connection 中读取数据包
 func (s *session) handleTCPPackage() error {
 	var (
 		ok       bool
@@ -628,6 +638,7 @@ func (s *session) handleTCPPackage() error {
 		pkg      interface{}
 	)
 
+	// 获取 byte 数组
 	pktBuf = gxbytes.NewBuffer(nil)
 
 	conn = s.Connection.(*gettyTCPConn)
@@ -644,13 +655,18 @@ func (s *session) handleTCPPackage() error {
 			// for clause for the network timeout condition check
 			// s.conn.SetReadTimeout(time.Now().Add(s.rTimeout))
 			buf = pktBuf.WriteNextBegin(maxReadBufLen)
+			// 读取
 			bufLen, err = conn.recv(buf)
+
 			if err != nil {
 				if netError, ok = perrors.Cause(err).(net.Error); ok && netError.Timeout() {
+					// 如果是超时
 					break
 				}
+				// 如果是 EOF，那么就要正常退出
 				if perrors.Cause(err) == io.EOF {
 					log.Infof("%s, session.conn read EOF, client send over, session exit", s.sessionToken())
+					// 不带错误的退出
 					err = nil
 					exit = true
 					if bufLen != 0 {
@@ -663,16 +679,19 @@ func (s *session) handleTCPPackage() error {
 					break
 				}
 				log.Errorf("%s, [session.conn.read] = error:%+v", s.sessionToken(), perrors.WithStack(err))
+				// 带错误退出
 				exit = true
 			}
 			break
 		}
+		// 当读取到数据后
 		if 0 != bufLen {
 			pktBuf.WriteNextEnd(bufLen)
 			for {
 				if pktBuf.Len() <= 0 {
 					break
 				}
+				// 调用 reader 从 bytes 中读取数据
 				pkg, pkgLen, err = s.reader.Read(s, pktBuf.Bytes())
 				// for case 3/case 4
 				if err == nil && s.maxMsgLen > 0 && pkgLen > int(s.maxMsgLen) {
@@ -691,6 +710,7 @@ func (s *session) handleTCPPackage() error {
 				}
 				// handle case 4
 				s.UpdateActive()
+				// 将这个加到任务中
 				s.addTask(pkg)
 				pktBuf.Next(pkgLen)
 				// continue to handle case 5

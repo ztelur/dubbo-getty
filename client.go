@@ -160,6 +160,7 @@ func (c *client) dialTCP() Session {
 				conn, err = tls.DialWithDialer(d, "tcp", c.addr, sslConfig)
 			}
 		} else {
+			// 调用网络包的 DialTimeout
 			conn, err = net.DialTimeout("tcp", c.addr, connectTimeout)
 		}
 		if err == nil && gxnet.IsSameAddr(conn.RemoteAddr(), conn.LocalAddr()) {
@@ -167,6 +168,7 @@ func (c *client) dialTCP() Session {
 			err = errSelfConnect
 		}
 		if err == nil {
+			// 成功了则用来构建一个 TCPSession
 			return newTCPSession(conn, c)
 		}
 
@@ -341,6 +343,7 @@ func (c *client) dialWSS() Session {
 }
 
 func (c *client) dial() Session {
+	// 进行不同的协议的处理
 	switch c.endPointType {
 	case TCP_CLIENT:
 		return c.dialTCP()
@@ -381,11 +384,13 @@ func (c *client) connect() {
 	)
 
 	for {
+		// 拨号
 		ss = c.dial()
 		if ss == nil {
 			// client has been closed
 			break
 		}
+		// 再次创建 session
 		err = c.newSession(ss)
 		if err == nil {
 			ss.(*session).run()
@@ -416,6 +421,7 @@ func (c *client) RunEventLoop(newSession NewSessionCallback) {
 	c.Lock()
 	c.newSession = newSession
 	c.Unlock()
+	// clinet 端就是进行连接
 	c.reConnect()
 }
 
@@ -424,6 +430,7 @@ func (c *client) reConnect() {
 	var num, max, times, interval int
 
 	max = c.number
+	// 重新连接的次数
 	interval = c.reconnectInterval
 	if interval == 0 {
 		interval = reconnectInterval
@@ -443,6 +450,7 @@ func (c *client) reConnect() {
 		if maxTimes < times {
 			times = maxTimes
 		}
+		// sleep
 		<-gxtime.After(time.Duration(int64(times) * int64(interval)))
 	}
 }

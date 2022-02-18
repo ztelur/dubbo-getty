@@ -188,7 +188,7 @@ func newGettyTCPConn(conn net.Conn) *gettyTCPConn {
 	if conn.RemoteAddr() != nil {
 		peerAddr = conn.RemoteAddr().String()
 	}
-
+	// 生成一个新的TCPConn，并且创建好 con，reaer和writer
 	return &gettyTCPConn{
 		conn:   conn,
 		reader: io.Reader(conn),
@@ -269,6 +269,7 @@ func (t *gettyTCPConn) recv(p []byte) (int, error) {
 		// See https://github.com/golang/go/issues/15133 for details.
 		currentTime = time.Now()
 		if currentTime.Sub(t.rLastDeadline.Load()) > t.rTimeout.Load()>>2 {
+			// 设置读超时，不断向后增加
 			if err = t.conn.SetReadDeadline(currentTime.Add(t.rTimeout.Load())); err != nil {
 				// just a timeout error
 				return 0, perrors.WithStack(err)
@@ -299,6 +300,7 @@ func (t *gettyTCPConn) send(pkg interface{}) (int, error) {
 		// See https://github.com/golang/go/issues/15133 for details.
 		currentTime = time.Now()
 		if currentTime.Sub(t.wLastDeadline.Load()) > t.wTimeout.Load()>>2 {
+			// 设置写超时
 			if err = t.conn.SetWriteDeadline(currentTime.Add(t.wTimeout.Load())); err != nil {
 				return 0, perrors.WithStack(err)
 			}
@@ -319,6 +321,7 @@ func (t *gettyTCPConn) send(pkg interface{}) (int, error) {
 	}
 
 	if p, ok = pkg.([]byte); ok {
+		// 写入数据
 		length, err = t.writer.Write(p)
 		if err == nil {
 			t.writeBytes.Add((uint32)(len(p)))

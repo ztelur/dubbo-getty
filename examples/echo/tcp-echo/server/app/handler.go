@@ -68,6 +68,7 @@ type MessageHandler struct{}
 func (h *MessageHandler) Handle(session getty.Session, pkg *EchoPackage) error {
 	log.Debugf("get echo package{%s}", pkg)
 	// write echo message handle logic here.
+	// 直接调用 session的 WritePkg 函数将返回值写入进去。
 	_, _, err := session.WritePkg(pkg, WritePkgTimeout)
 	if err != nil {
 		log.Warnf("session.WritePkg(session{%s}, pkg{%s}) = error{%v}", session.Stat(), pkg, err)
@@ -139,12 +140,13 @@ func (h *EchoMessageHandler) OnMessage(session getty.Session, pkg interface{}) {
 		log.Errorf("illegal packge{%#v}", pkg)
 		return
 	}
-
+	// 根据请求的数据获取对应的 handler
 	handler, ok := h.handlers[p.H.Command]
 	if !ok {
 		log.Errorf("illegal command{%d}", p.H.Command)
 		return
 	}
+	// 然后执行 Handle
 	err := handler.Handle(session, p)
 	if err != nil {
 		h.rwlock.Lock()

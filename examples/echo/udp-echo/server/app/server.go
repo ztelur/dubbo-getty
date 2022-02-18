@@ -131,6 +131,7 @@ func initServer() {
 	}
 	for _, port := range portList {
 		addr = gxnet.HostAddress2(conf.Host, port)
+		// 使用 NewUDPEndPoint 来生成 udp server
 		server = getty.NewUDPEndPoint(
 			getty.WithLocalAddress(addr),
 		)

@@ -90,25 +90,32 @@ func newSession(session getty.Session) error {
 	if conf.GettySessionParam.CompressEncoding {
 		session.SetCompressType(getty.CompressZip)
 	}
-
+	// 拿到原本的 TCPConn 进行参数预先设置
 	if tcpConn, ok = session.Conn().(*net.TCPConn); !ok {
 		panic(fmt.Sprintf("%s, session.conn{%#v} is not tcp connection\n", session.Stat(), session.Conn()))
 	}
-
+	// 是否启动 delay，尽可能少发 tcp 包，对小包场景并且低延迟场景不友好
 	tcpConn.SetNoDelay(conf.GettySessionParam.TcpNoDelay)
 	tcpConn.SetKeepAlive(conf.GettySessionParam.TcpKeepAlive)
+	// 如果需要 keep alive 则设置时间
 	if conf.GettySessionParam.TcpKeepAlive {
 		tcpConn.SetKeepAlivePeriod(conf.GettySessionParam.keepAlivePeriod)
 	}
+	// 读和写的 buffer
 	tcpConn.SetReadBuffer(conf.GettySessionParam.TcpRBufSize)
 	tcpConn.SetWriteBuffer(conf.GettySessionParam.TcpWBufSize)
 
 	session.SetName(conf.GettySessionParam.SessionName)
+	// 设置最大的消息数量
 	session.SetMaxMsgLen(conf.GettySessionParam.MaxMsgLen)
+	// 设置数据交互层，也就是 write 和 read
 	session.SetPkgHandler(echoPkgHandler)
+	// 设置监控接口，也就是OnOpen,OnError,OnClose,OnMessage,OnCron
 	session.SetEventListener(echoMsgHandler)
+	// 读写 timeout
 	session.SetReadTimeout(conf.GettySessionParam.tcpReadTimeout)
 	session.SetWriteTimeout(conf.GettySessionParam.tcpWriteTimeout)
+	// 心跳
 	session.SetCronPeriod((int)(conf.sessionTimeout.Nanoseconds() / 1e6))
 	session.SetWaitTime(conf.GettySessionParam.waitTimeout)
 	// session.SetTaskPool(taskPool)
@@ -139,6 +146,7 @@ func initServer() {
 	}
 	for _, port := range portList {
 		addr = gxnet.HostAddress2(conf.Host, port)
+		// options 实现
 		serverOpts := []getty.ServerOption{getty.WithLocalAddress(addr)}
 		serverOpts = append(serverOpts, getty.WithServerTaskPool(taskPool))
 		server = getty.NewTCPServer(serverOpts...)

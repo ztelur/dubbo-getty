@@ -122,8 +122,9 @@ func initClient() {
 	if conf.ConnectionNum != 0 {
 		clientOpts = append(clientOpts, getty.WithConnectionNumber(conf.ConnectionNum))
 	}
-
+	// 创建出来 TCPClient
 	client.gettyClient = getty.NewTCPClient(clientOpts...)
+	// 启动起来
 	client.gettyClient.RunEventLoop(newSession)
 }
 
@@ -169,6 +170,7 @@ func echo() {
 	pkg.B = conf.EchoString
 	pkg.H.Len = (uint16)(len(pkg.B)) + 1
 
+	// 选择一个 session，然后使用 WritePkg
 	if session := client.selectSession(); session != nil {
 		_, _, err := session.WritePkg(&pkg, WritePkgTimeout)
 		if err != nil {
